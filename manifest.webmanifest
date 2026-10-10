@@ -1,0 +1,18 @@
+{
+  "name": "家計精算アプリ",
+  "short_name": "月次精算",
+  "description": "毎月の給与・固定費・カード引落・個別精算を管理する家計精算アプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#222222",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
