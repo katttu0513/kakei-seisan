@@ -47,7 +47,7 @@ function ymLabel(k){let [y,m]=k.split('-');return `${y}年${Number(m)}月`}
 function nextYm(k){let [y,m]=k.split('-').map(Number);m++;if(m>12){y++;m=1}return `${y}-${String(m).padStart(2,'0')}`}
 function prevYm(k){let [y,m]=k.split('-').map(Number);m--;if(m<1){y--;m=12}return `${y}-${String(m).padStart(2,'0')}`}
 function makeMonthSnapshot(k,m){
- if(!m.fixedSnapshot){m.fixedSnapshot=activeFixed(k).map(x=>({id:x.id||'',name:x.name||'',amount:Math.abs(Number(x.amount||0)),memo:x.memo||''}));}
+ if(!m.fixedSnapshot){m.fixedSnapshot=activeFixed(k).map(x=>({id:x.id||'',name:x.name||'',amount:Number(x.amount||0),memo:x.memo||''}));}
  if(!m.cardSnapshot){m.cardSnapshot=activeCards(k).map(x=>({id:x.id,name:x.name}));}
  if(!m.deductions)m.deductions=[]; if(!m.cards)m.cards={}; if(!m.individuals)m.individuals=[];
 }
@@ -56,14 +56,14 @@ function ensureMonth(k){
  makeMonthSnapshot(k,db.months[k]); save();
 }
 function refreshUnsettledSnapshots(){
- Object.keys(db.months||{}).forEach(k=>{const m=db.months[k];if(m.status==='settled')return;m.fixedSnapshot=activeFixed(k).map(x=>({id:x.id||'',name:x.name||'',amount:Math.abs(Number(x.amount||0)),memo:x.memo||''}));m.cardSnapshot=activeCards(k).map(x=>({id:x.id,name:x.name}));});
+ Object.keys(db.months||{}).forEach(k=>{const m=db.months[k];if(m.status==='settled')return;m.fixedSnapshot=activeFixed(k).map(x=>({id:x.id||'',name:x.name||'',amount:Number(x.amount||0),memo:x.memo||''}));m.cardSnapshot=activeCards(k).map(x=>({id:x.id,name:x.name}));});
 }
 function activeFixed(k){return db.fixed.filter(x=>x.start<=k && (!x.end||x.end>=k))}
 function activeCards(k){return db.cards.filter(x=>x.start<=k && (!x.end||x.end>=k))}
 function calc(k){
  ensureMonth(k); let m=db.months[k];
  const salary=Number(m.salary||0), ded=(m.deductions||[]).reduce((a,x)=>a+Number(x.amount||0),0);
- const fixed=(m.fixedSnapshot||[]).reduce((a,x)=>a+Math.abs(Number(x.amount||0)),0);
+ const fixed=(m.fixedSnapshot||[]).reduce((a,x)=>a+Number(x.amount||0),0);
  const cards=(m.cardSnapshot||[]).reduce((a,c)=>a+Number(m.cards[c.id]||0),0);
  const indiv=(m.individuals||[]).reduce((a,x)=>a+Number(x.amount||0),0);
  return {salary,ded,fixed,cards,indiv,result:fixed+cards+indiv-(salary-ded)};
@@ -158,7 +158,7 @@ function renderFixed(a){
 }
 function addFixed(){openFixed(-1)} function editFixed(i){openFixed(i)}
 function openFixed(i){let x=i<0?{name:'',amount:0,memo:'',start:ym(),end:''}:db.fixed[i];document.getElementById('modal').style.display='flex';document.getElementById('modalBody').innerHTML=`<h2>固定費</h2><label>名称</label><input id="fname" value="${esc(x.name)}"><label>金額</label><input id="famount" type="number" value="${x.amount}"><label>メモ</label><input id="fmemo" value="${esc(x.memo)}"><label>開始月</label><input id="fstart" type="month" value="${x.start}"><label>終了月（空欄＝継続）</label><input id="fend" type="month" value="${x.end||''}"><div class="actions" style="margin-top:14px"><button class="primary" onclick="saveFixed(${i})">登録</button><button onclick="closeModal()">キャンセル</button></div>`}
-function saveFixed(i){let x={id:i<0?'f'+Date.now():db.fixed[i].id||('f'+Date.now()),name:document.getElementById('fname').value.trim(),amount:Math.abs(Number(document.getElementById('famount').value||0)),memo:document.getElementById('fmemo').value,start:document.getElementById('fstart').value,end:document.getElementById('fend').value};if(!x.name||!x.start){alert('名称と開始月を入力してください。');return}if(x.end&&x.end<x.start){alert('終了月は開始月以降にしてください。');return}if(i<0)db.fixed.push(x);else{const old=db.fixed[i];const from=x.start;if(old.start<from){old.end=prevYm(from);db.fixed.push({...x,id:'f'+Date.now()});}else{db.fixed[i]=x;}}refreshUnsettledSnapshots();save();closeModal();render()}
+function saveFixed(i){let x={id:i<0?'f'+Date.now():db.fixed[i].id||('f'+Date.now()),name:document.getElementById('fname').value.trim(),amount:Number(document.getElementById('famount').value||0),memo:document.getElementById('fmemo').value,start:document.getElementById('fstart').value,end:document.getElementById('fend').value};if(!x.name||!x.start){alert('名称と開始月を入力してください。');return}if(x.end&&x.end<x.start){alert('終了月は開始月以降にしてください。');return}if(i<0)db.fixed.push(x);else{const old=db.fixed[i];const from=x.start;if(old.start<from){old.end=prevYm(from);db.fixed.push({...x,id:'f'+Date.now()});}else{db.fixed[i]=x;}}refreshUnsettledSnapshots();save();closeModal();render()}
 function deleteFixed(i){if(confirm('この固定費を削除しますか？')){db.fixed.splice(i,1);refreshUnsettledSnapshots();save();render()}}
 function renderCards(a){
  const items=db.cards.map((x,i)=>({x,i})).sort((a,b)=>{const ae=!a.x.end,be=!b.x.end;if(ae!==be)return ae?-1:1;if(ae)return String(b.x.start||'').localeCompare(String(a.x.start||''));return String(b.x.end||'').localeCompare(String(a.x.end||''));});
