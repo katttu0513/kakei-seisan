@@ -34,12 +34,14 @@ input,textarea,select{width:100%;padding:10px;border:1px solid #ccc;border-radiu
 <button onclick="show('history')">履歴</button>
 <button onclick="show('fixed')">固定費</button>
 <button onclick="show('cards')">カード</button>
+<button onclick="show('aggregate')">集計</button>
 <button onclick="show('settings')">設定</button>
 </div>
 <div id="modal" class="modal" style="display:none"><div id="modalBody"></div></div>
 <script>
 const KEY='monthly-settlement-v2';
 let db=JSON.parse(localStorage.getItem(KEY)||localStorage.getItem('monthly-settlement-v1')||'null')||{months:{},fixed:[],cards:[]};
+db.bonuses=Array.isArray(db.bonuses)?db.bonuses:[];
 let screen='home', currentMonth=null;
 function save(){try{localStorage.setItem(KEY,JSON.stringify(db));localStorage.setItem('monthly-settlement-v1',JSON.stringify(db));}catch(e){alert('保存容量が不足している可能性があります。設定からバックアップを保存してください。')}}
 function ym(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
@@ -87,6 +89,7 @@ function render(){
  else if(screen==='history') renderHistory(app);
  else if(screen==='fixed') renderFixed(app);
  else if(screen==='cards') renderCards(app);
+ else if(screen==='aggregate') renderAggregate(app);
  else renderSettings(app);
 }
 function renderHome(a){
@@ -157,8 +160,8 @@ function renderFixed(a){
  a.innerHTML=`<h1>固定費管理</h1><div class="card"><button class="primary" onclick="addFixed()">＋固定費を追加</button></div><div class="card">${items.map(({x,i})=>`<div class="item ${x.end?'muted-item':''}"><div class="row"><b>${esc(x.name)}</b><b>${Number(x.amount).toLocaleString()}円</b></div><div class="muted">${esc(x.memo||'')}　${x.start} ～ ${x.end||'継続'}</div><div class="actions" style="margin-top:7px"><button onclick="editFixed(${i})">編集</button><button class="danger" onclick="deleteFixed(${i})">削除</button></div></div>`).join('')||'<div class="empty">固定費がありません</div>'}</div>`;
 }
 function addFixed(){openFixed(-1)} function editFixed(i){openFixed(i)}
-function openFixed(i){let x=i<0?{name:'',amount:0,memo:'',start:ym(),end:''}:db.fixed[i];document.getElementById('modal').style.display='flex';document.getElementById('modalBody').innerHTML=`<h2>固定費</h2><label>名称</label><input id="fname" value="${esc(x.name)}"><label>金額</label><input id="famount" type="number" value="${x.amount}"><label>メモ</label><input id="fmemo" value="${esc(x.memo)}"><label>開始月</label><input id="fstart" type="month" value="${x.start}"><label>終了月（空欄＝継続）</label><input id="fend" type="month" value="${x.end||''}"><div class="actions" style="margin-top:14px"><button class="primary" onclick="saveFixed(${i})">登録</button><button onclick="closeModal()">キャンセル</button></div>`}
-function saveFixed(i){let x={id:i<0?'f'+Date.now():db.fixed[i].id||('f'+Date.now()),name:document.getElementById('fname').value.trim(),amount:Number(document.getElementById('famount').value||0),memo:document.getElementById('fmemo').value,start:document.getElementById('fstart').value,end:document.getElementById('fend').value};if(!x.name||!x.start){alert('名称と開始月を入力してください。');return}if(x.end&&x.end<x.start){alert('終了月は開始月以降にしてください。');return}if(i<0)db.fixed.push(x);else{const old=db.fixed[i];const from=x.start;if(old.start<from){old.end=prevYm(from);db.fixed.push({...x,id:'f'+Date.now()});}else{db.fixed[i]=x;}}refreshUnsettledSnapshots();save();closeModal();render()}
+function openFixed(i){let x=i<0?{name:'',amount:0,memo:'',start:ym(),end:''}:db.fixed[i];document.getElementById('modal').style.display='flex';document.getElementById('modalBody').innerHTML=`<h2>固定費</h2><label>名称</label><input id="fname" value="${esc(x.name)}"><label>金額</label><div class="grid"><select id="fsign"><option value="1" ${Number(x.amount)>=0?'selected':''}>＋ 増やす</option><option value="-1" ${Number(x.amount)<0?'selected':''}>− 減らす</option></select><input id="famount" type="number" min="0" value="${Math.abs(Number(x.amount||0))}" placeholder="金額"></div><label>メモ</label><input id="fmemo" value="${esc(x.memo)}"><label>開始月</label><input id="fstart" type="month" value="${x.start}"><label>終了月（空欄＝継続）</label><input id="fend" type="month" value="${x.end||''}"><div class="actions" style="margin-top:14px"><button class="primary" onclick="saveFixed(${i})">登録</button><button onclick="closeModal()">キャンセル</button></div>`}
+function saveFixed(i){let x={id:i<0?'f'+Date.now():db.fixed[i].id||('f'+Date.now()),name:document.getElementById('fname').value.trim(),amount:Math.abs(Number(document.getElementById('famount').value||0))*Number(document.getElementById('fsign').value),memo:document.getElementById('fmemo').value,start:document.getElementById('fstart').value,end:document.getElementById('fend').value};if(!x.name||!x.start){alert('名称と開始月を入力してください。');return}if(x.end&&x.end<x.start){alert('終了月は開始月以降にしてください。');return}if(i<0)db.fixed.push(x);else{const old=db.fixed[i];const from=x.start;if(old.start<from){old.end=prevYm(from);db.fixed.push({...x,id:'f'+Date.now()});}else{db.fixed[i]=x;}}refreshUnsettledSnapshots();save();closeModal();render()}
 function deleteFixed(i){if(confirm('この固定費を削除しますか？')){db.fixed.splice(i,1);refreshUnsettledSnapshots();save();render()}}
 function renderCards(a){
  const items=db.cards.map((x,i)=>({x,i})).sort((a,b)=>{const ae=!a.x.end,be=!b.x.end;if(ae!==be)return ae?-1:1;if(ae)return String(b.x.start||'').localeCompare(String(a.x.start||''));return String(b.x.end||'').localeCompare(String(a.x.end||''));});
@@ -167,10 +170,69 @@ function addCard(){openCard(-1)} function editCard(i){openCard(i)}
 function openCard(i){let x=i<0?{name:'',start:ym(),end:''}:db.cards[i];document.getElementById('modal').style.display='flex';document.getElementById('modalBody').innerHTML=`<h2>カード</h2><label>カード名</label><input id="cname" value="${esc(x.name)}"><label>開始月</label><input id="cstart" type="month" value="${x.start}"><label>終了月（空欄＝継続）</label><input id="cend" type="month" value="${x.end||''}"><div class="actions" style="margin-top:14px"><button class="primary" onclick="saveCard(${i})">登録</button><button onclick="closeModal()">キャンセル</button></div>`}
 function saveCard(i){let x={id:i<0?'c'+Date.now():db.cards[i].id,name:document.getElementById('cname').value.trim(),start:document.getElementById('cstart').value,end:document.getElementById('cend').value};if(!x.name||!x.start){alert('カード名と開始月を入力してください。');return}if(x.end&&x.end<x.start){alert('終了月は開始月以降にしてください。');return}if(i<0)db.cards.push(x);else{const old=db.cards[i];if(old.start<x.start){old.end=prevYm(x.start);db.cards.push({...x,id:'c'+Date.now()});}else db.cards[i]=x;}refreshUnsettledSnapshots();save();closeModal();render()}
 function deleteCard(i){if(confirm('このカードを削除しますか？')){db.cards.splice(i,1);refreshUnsettledSnapshots();save();render()}}
+
+function monthIncome(k){
+ const m=db.months[k],bonus=(db.bonuses||[]).filter(b=>b.month===k).reduce((s,b)=>s+Number(b.amount||0),0);
+ if(!m)return {salary:0,ded:0,base:0,bonus,total:bonus};
+ const salary=Number(m.salary||0),ded=(m.deductions||[]).reduce((s,x)=>s+Number(x.amount||0),0),base=salary-ded;
+ return {salary,ded,base,bonus,total:base+bonus};
+}
+function monthExpenses(k){
+ const m=db.months[k]; if(!m)return {fixed:0,cards:0,indiv:0,total:0};
+ makeMonthSnapshot(k,m);
+ const fixed=(m.fixedSnapshot||[]).reduce((s,x)=>s+Number(x.amount||0),0);
+ const cards=(m.cardSnapshot||[]).reduce((s,c)=>s+Number(m.cards?.[c.id]||0),0);
+ const indiv=(m.individuals||[]).reduce((s,x)=>s+Number(x.amount||0),0);
+ return {fixed,cards,indiv,total:fixed+cards+indiv};
+}
+function renderAggregate(a){
+ const now=ym(),year=window.aggYear||now.slice(0,4),mode=window.aggMode||'year';
+ const start=mode==='year'?year+'-01':(window.aggStart||year+'-01');
+ const end=mode==='year'?year+'-12':(window.aggEnd||now);
+ const valid=/^\d{4}-(0[1-9]|1[0-2])$/.test(start)&&/^\d{4}-(0[1-9]|1[0-2])$/.test(end)&&start<=end;
+ const months=[]; if(valid){let k=start,g=0;while(k<=end&&g++<240){months.push(k);k=nextYm(k)}}
+ const fixedMap=new Map(),cardMap=new Map();
+ let salary=0,ded=0,bonus=0,income=0,fixed=0,cards=0,indiv=0,expenses=0;
+ const rows=months.map(k=>{
+  const inc=monthIncome(k),ex=monthExpenses(k),m=db.months[k];
+  salary+=inc.salary;ded+=inc.ded;bonus+=inc.bonus;income+=inc.total;fixed+=ex.fixed;cards+=ex.cards;indiv+=ex.indiv;expenses+=ex.total;
+  (m?.fixedSnapshot||[]).forEach(x=>{const id=x.id||('name:'+x.name),v=fixedMap.get(id)||{name:x.name||'名称未設定',amount:0};v.amount+=Number(x.amount||0);if(x.name)v.name=x.name;fixedMap.set(id,v)});
+  (m?.cardSnapshot||[]).forEach(c=>{const v=cardMap.get(c.id)||{name:c.name||'カード',amount:0};v.amount+=Number(m.cards?.[c.id]||0);if(c.name)v.name=c.name;cardMap.set(c.id,v)});
+  return {k,inc,ex};
+ });
+ const fmt=n=>money(n);
+ const max=Math.max(1,...rows.map(r=>Math.max(0,r.ex.total,r.ex.cards,r.inc.total)));
+ const chart=rows.map(r=>`<div class="item"><div class="row"><b>${ymLabel(r.k)}</b><span class="muted small">収入 ${fmt(r.inc.total)} / 支出 ${fmt(r.ex.total)}</span></div><div class="muted small">支出合計</div><div style="height:10px;background:#eee;border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,Math.min(100,r.ex.total/max*100))}%;background:#5b8def"></div></div><div class="muted small">カード合計 ${fmt(r.ex.cards)}</div><div style="height:8px;background:#eee;border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,Math.min(100,r.ex.cards/max*100))}%;background:#16a085"></div></div><div class="muted small">収支 ${fmt(r.inc.total-r.ex.total)}</div></div>`).join('');
+ a.innerHTML=`<h1>家計集計</h1><div class="card"><div class="tabs"><button class="${mode==='year'?'active':''}" onclick="window.aggMode='year';render()">年単位</button><button class="${mode==='range'?'active':''}" onclick="window.aggMode='range';render()">期間指定</button></div>
+ ${mode==='year'?`<label>集計年</label><select onchange="window.aggYear=this.value;render()">${Array.from({length:12},(_,i)=>Number(now.slice(0,4))-5+i).map(y=>`<option value="${y}" ${String(y)===String(year)?'selected':''}>${y}年</option>`).join('')}</select>`:`<div class="grid"><div><label>開始年月</label><input id="aggStart" type="month" value="${esc(start)}"></div><div><label>終了年月</label><input id="aggEnd" type="month" value="${esc(end)}"></div></div><button class="primary" style="margin-top:10px" onclick="window.aggStart=document.getElementById('aggStart').value;window.aggEnd=document.getElementById('aggEnd').value;render()">この期間で集計</button>`}</div>
+ ${!valid?'<div class="card warn">期間を正しく指定してください。</div>':`
+ <div class="card"><div class="muted">集計期間：${ymLabel(start)} ～ ${ymLabel(end)}</div><h2>収入</h2><div class="row"><span>給与総額</span><b>${fmt(salary)}</b></div><div class="row"><span>給与の控除・除外額</span><b>${fmt(ded)}</b></div><div class="row"><span>精算対象の給与</span><b>${fmt(salary-ded)}</b></div><div class="row"><span>ボーナス（集計のみ）</span><b>${fmt(bonus)}</b></div><div class="row"><strong>収入合計</strong><strong>${fmt(income)}</strong></div></div>
+ <div class="card"><h2>支出</h2><div class="row"><span>固定費</span><b>${fmt(fixed)}</b></div><div class="row"><span>クレジットカード</span><b>${fmt(cards)}</b></div><div class="row"><span>個別精算</span><b>${fmt(indiv)}</b></div><div class="row"><strong>支出合計</strong><strong>${fmt(expenses)}</strong></div></div>
+ <div class="card"><div class="muted">収入合計 − 支出合計</div><h2>収支差額</h2><div class="amount ${income-expenses<0?'neg':'pos'}">${fmt(income-expenses)}</div></div>
+ <div class="card"><h2>固定費の明細別集計</h2>${[...fixedMap.values()].sort((x,y)=>Math.abs(y.amount)-Math.abs(x.amount)).map(x=>`<div class="row"><span>${esc(x.name)}</span><b>${fmt(x.amount)}</b></div>`).join('')||'<div class="empty">対象データがありません</div>'}</div>
+ <div class="card"><h2>カード別集計</h2>${[...cardMap.values()].sort((x,y)=>Math.abs(y.amount)-Math.abs(x.amount)).map(x=>`<div class="row"><span>${esc(x.name)}</span><b>${fmt(x.amount)}</b></div>`).join('')||'<div class="empty">対象データがありません</div>'}</div>
+ <div class="card"><h2>月別推移</h2><div class="muted small">青：支出合計　緑：カード合計</div>${chart||'<div class="empty">対象データがありません</div>'}</div>`}
+ <div class="card"><h2>ボーナス登録</h2><p class="muted">ボーナスは収入集計に含まれますが、月々の精算金額には影響しません。</p><button class="primary" onclick="openBonus(-1)">＋ボーナスを登録</button>
+ ${(db.bonuses||[]).slice().sort((x,y)=>y.month.localeCompare(x.month)).map(b=>`<div class="item row"><div><b>${esc(b.name||'ボーナス')}　${esc(b.month)}</b><br>${fmt(b.amount)}</div><div class="actions"><button onclick="openBonusById('${b.id}')">編集</button><button class="danger" onclick="deleteBonus('${b.id}')">削除</button></div></div>`).join('')||'<div class="empty">ボーナスはまだ登録されていません</div>'}</div>`;
+}
+function openBonus(i){
+ const x=i<0?{id:'',month:ym(),name:'ボーナス',amount:0}:db.bonuses[i];
+ document.getElementById('modal').style.display='flex';
+ document.getElementById('modalBody').innerHTML=`<h2>ボーナス登録</h2><label>支給年月</label><input id="bmonth" type="month" value="${esc(x.month)}"><label>名称</label><input id="bname" value="${esc(x.name||'ボーナス')}"><label>集計する金額</label><input id="bamount" type="number" min="0" value="${Math.abs(Number(x.amount||0))}"><div class="muted">この金額は集計だけに反映し、月々の精算には加えません。</div><div class="actions" style="margin-top:14px"><button class="primary" onclick="saveBonus('${x.id||''}')">登録</button><button onclick="closeModal()">キャンセル</button></div>`;
+}
+function openBonusById(id){openBonus(db.bonuses.findIndex(x=>x.id===id))}
+function saveBonus(id){
+ const x={id:id||'b'+Date.now(),month:document.getElementById('bmonth').value,name:document.getElementById('bname').value.trim()||'ボーナス',amount:Number(document.getElementById('bamount').value||0)};
+ if(!x.month){alert('支給年月を入力してください。');return}
+ const i=db.bonuses.findIndex(b=>b.id===id);if(i<0)db.bonuses.push(x);else db.bonuses[i]=x;
+ save();closeModal();render();
+}
+function deleteBonus(id){if(confirm('このボーナスを削除しますか？')){db.bonuses=db.bonuses.filter(x=>x.id!==id);save();render()}}
+
 function renderSettings(a){let ks=Object.keys(db.months).sort().reverse();a.innerHTML=`<h1>設定</h1><div class="card"><h2>データ管理</h2><div class="actions"><button onclick="exportData()">データをエクスポート</button><button onclick="importData()">データをインポート</button><button onclick="template()">入力用テンプレートをダウンロード</button></div><p class="muted">バックアップはファイルとして保存・復元します。クラウド連携は使用しません。</p></div><div class="card"><h2>登録済みの月</h2>${ks.map(k=>`<div class="item row"><span>${ymLabel(k)}</span><button onclick="show('detail','${k}')">開く</button></div>`).join('')||'<div class="empty">月がありません</div>'}</div><div class="card"><h2>過去月</h2><button onclick="addPastMonth()">＋過去の月を追加</button></div>`}
 function download(name,text,type='application/json'){let b=new Blob([text],{type}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
 function exportData(){download('家計精算バックアップ_'+ym()+'.json',JSON.stringify({app:'monthly-settlement',version:2,exportedAt:new Date().toISOString(),data:db},null,2))}
-function importData(){let i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=async()=>{let f=i.files[0];if(!f)return;try{let x=JSON.parse(await f.text());x=x.data||x;if(!x.months||!Array.isArray(x.fixed)||!Array.isArray(x.cards))throw 0;if(confirm('現在のデータを置き換えて復元しますか？先に現在のデータをバックアップすることをおすすめします。')){db=x;Object.keys(db.months).forEach(k=>makeMonthSnapshot(k,db.months[k]));save();render();alert('復元しました。')}}catch(e){alert('読み込めないバックアップです')}};i.click()}
+function importData(){let i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=async()=>{let f=i.files[0];if(!f)return;try{let x=JSON.parse(await f.text());x=x.data||x;if(!x.months||!Array.isArray(x.fixed)||!Array.isArray(x.cards))throw 0;if(confirm('現在のデータを置き換えて復元しますか？先に現在のデータをバックアップすることをおすすめします。')){db=x;db.bonuses=Array.isArray(db.bonuses)?db.bonuses:[];Object.keys(db.months).forEach(k=>makeMonthSnapshot(k,db.months[k]));save();render();alert('復元しました。')}}catch(e){alert('読み込めないバックアップです')}};i.click()}
 function template(){
  const text=`【給与.csv】\\n精算月,額面\\n2026-10,\\n\\n【給与差引.csv】\\n精算月,内容,金額\\n2026-10,交通費,\\n\\n【固定費.csv】\\n名称,金額,メモ,開始月,終了月\\n家賃,,,2026-10,\\n\\n【カード.csv】\\nカード名,開始月,終了月\\n三井住友カード,2026-10,\\n\\n【カード引落.csv】\\n精算月,カード名,翌月引落額\\n2026-10,三井住友カード,\\n\\n【個別精算.csv】\\n精算月,日付,内容,金額\\n2026-10,,,\\n`;
  download('monthly-settlement-import-template.txt',text,'text/plain;charset=utf-8')
