@@ -19,7 +19,7 @@ button{border:1px solid #ccc;background:#fff;border-radius:10px;padding:10px 13p
 button.primary{background:#222;color:#fff;border-color:#222}button.danger{color:#a00}.tabs{display:flex;gap:8px;overflow:auto;padding:8px 0}
 .tabs button.active{background:#222;color:#fff}.nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;display:flex;justify-content:center;gap:4px;padding:8px;z-index:10}.nav button{flex:1;max-width:180px;border:0}
 input,textarea,select{width:100%;padding:10px;border:1px solid #ccc;border-radius:9px;background:#fff}label{display:block;font-size:13px;color:#555;margin:10px 0 5px}
-.item{padding:12px 0;border-bottom:1px solid #eee}.item:last-child{border-bottom:0}.pos{color:#075e26}.neg{color:#9b1c1c}
+.item{padding:12px 0;border-bottom:1px solid #eee}.item:last-child{border-bottom:0}.tap-row{cursor:pointer;border-radius:8px}.tap-row:active{background:#f3f4f6}.compact-row{padding:7px 0;margin:3px 0}.pos{color:#075e26}.neg{color:#9b1c1c}
 .badge{font-size:12px;border-radius:999px;padding:4px 8px;background:#eee}.warn{background:#fff4cc}.done{background:#e6f5ea}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .small{font-size:12px}.right{text-align:right}.muted-item{opacity:.48}.empty{color:#777;padding:20px 0;text-align:center}
 .modal{position:fixed;inset:0;background:#0008;display:flex;align-items:flex-end;z-index:20}.modal>div{background:#fff;width:100%;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px}
@@ -74,12 +74,12 @@ function statusText(s){return s==='settled'?'精算済み':'未精算'}
 function statusBadge(s){return `<span class="badge ${s==='settled'?'done':''}">${statusText(s)}</span>`}
 function money(v){const n=Number(v||0);return (n<0?'-':'')+Math.abs(n).toLocaleString()+'円'}
 function latestUnsettled(){
- const ks=Object.keys(db.months).filter(k=>db.months[k].status!=='settled').sort().reverse();
+ const ks=Object.keys(db.months).filter(k=>db.months[k].status!=='settled').sort();
  return ks[0]||ym();
 }
 function show(s,k){
   if(screen==='detail' && currentMonth) collectSalary();
-  screen=s;if(k)currentMonth=k;save();render()
+  screen=s;if(k)currentMonth=k;save();render();window.scrollTo({top:0,left:0,behavior:'instant'})
 }
 function render(){
  document.getElementById('headerMonth').textContent=currentMonth?ymLabel(currentMonth):'';
@@ -93,16 +93,11 @@ function render(){
  else renderSettings(app);
 }
 function renderHome(a){
- const k=latestUnsettled(); ensureMonth(k); const c=calc(k),m=db.months[k];
- a.innerHTML=`<div class="card">
- <div class="muted">最新の未精算月</div><h1>${ymLabel(k)} 精算</h1>
- <div class="amount">${money(c.result)}</div>
- <div>${statusBadge(m.status)} ${m.needsRecalc?'<span class="badge warn">再計算が必要</span>':''}</div>
- <div class="actions" style="margin-top:14px"><button class="primary" onclick="show('detail','${k}')">詳細を見る</button></div>
- </div>
- <div class="card"><h3>未精算の月</h3>${Object.keys(db.months).filter(x=>db.months[x].status!=='settled').sort().reverse().slice(0,8).map(x=>{
+ const k=latestUnsettled(); ensureMonth(k);
+ a.innerHTML=`
+ <div class="card"><h3>未精算の月</h3>${Object.keys(db.months).filter(x=>db.months[x].status!=='settled').sort().slice(0,8).map(x=>{
  let q=calc(x);return `<div class="item row"><div><b>${ymLabel(x)}</b><div class="muted">${statusText(db.months[x].status)}</div></div><div class="right">${money(q.result)}<br><button onclick="show('detail','${x}')">開く</button></div></div>`}).join('')||'<div class="empty">未精算の月はありません</div>'}</div>
- <div class="card"><h3>最近の精算</h3>${Object.keys(db.months).sort().reverse().slice(0,6).map(x=>{let q=calc(x);return `<div class="row"><span>${ymLabel(x)}</span><span>${money(q.result)}</span></div>`}).join('')}</div>`;
+ <div class="card"><h3>月別履歴</h3>${Object.keys(db.months).sort().reverse().slice(0,6).map(x=>{let q=calc(x),m=db.months[x];return `<div class="item row tap-row compact-row" role="button" tabindex="0" onclick="show('detail','${x}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();show('detail','${x}')}" aria-label="${ymLabel(x)}の詳細を開く"><div><b>${ymLabel(x)}</b><div class="muted">${statusText(m.status)}</div></div><div class="right">${money(q.result)}<span class="muted"> ›</span></div></div>`}).join('')}</div>`;
 }
 function copySettlement(value){
  const text=String(Number(value)||0);
@@ -159,7 +154,7 @@ function renderHistory(a){
  <div class="card">
    <h2>履歴</h2>
    <div style="max-height:55vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:4px">
-   ${ks.map(k=>{let q=calc(k),m=db.months[k];return `<div class="item row"><div><b>${ymLabel(k)}</b><br>${statusBadge(m.status)} ${m.needsRecalc?'<span class="badge warn">再計算が必要</span>':''}</div><div class="right">${money(q.result)}<br><button onclick="show('detail','${k}')">開く</button></div></div>`}).join('')||'<div class="empty">月がありません</div>'}
+   ${ks.map(k=>{let q=calc(k),m=db.months[k];return `<div class="item row tap-row" role="button" tabindex="0" onclick="show('detail','${k}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();show('detail','${k}')}" aria-label="${ymLabel(k)}の詳細を開く"><div><b>${ymLabel(k)}</b><br>${statusBadge(m.status)} ${m.needsRecalc?'<span class="badge warn">再計算が必要</span>':''}</div><div class="right">${money(q.result)}<div class="muted small">タップして詳細 ›</div></div></div>`}).join('')||'<div class="empty">月がありません</div>'}
    </div>
  </div>`;
 }
