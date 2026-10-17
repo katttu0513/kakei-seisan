@@ -104,10 +104,19 @@ function renderHome(a){
  let q=calc(x);return `<div class="item row"><div><b>${ymLabel(x)}</b><div class="muted">${statusText(db.months[x].status)}</div></div><div class="right">${money(q.result)}<br><button onclick="show('detail','${x}')">開く</button></div></div>`}).join('')||'<div class="empty">未精算の月はありません</div>'}</div>
  <div class="card"><h3>最近の精算</h3>${Object.keys(db.months).sort().reverse().slice(0,6).map(x=>{let q=calc(x);return `<div class="row"><span>${ymLabel(x)}</span><span>${money(q.result)}</span></div>`}).join('')}</div>`;
 }
+function copySettlement(value){
+ const text=String(Number(value)||0);
+ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>alert('精算金額 '+text+' をコピーしました。')).catch(()=>copySettlementFallback(text));}
+ else copySettlementFallback(text);
+}
+function copySettlementFallback(text){
+ const input=document.createElement('textarea');input.value=text;input.setAttribute('readonly','');input.style.position='fixed';input.style.opacity='0';document.body.appendChild(input);input.select();
+ let ok=false;try{ok=document.execCommand('copy')}catch(e){}input.remove();alert(ok?'精算金額 '+text+' をコピーしました。':'コピーできませんでした。金額を長押ししてコピーしてください。');
+}
 function renderDetail(a,k){
  ensureMonth(k);let m=db.months[k],c=calc(k),fixed=m.fixedSnapshot||[],cards=m.cardSnapshot||[];
  a.innerHTML=`<div class="actions"><button onclick="show('home')">← ホーム</button><button onclick="shiftMonth('${prevYm(k)}')">← 前月</button><button onclick="shiftMonth('${nextYm(k)}')">次月 →</button></div>
- <div class="card"><h2>精算金額</h2><div class="amount">${money(c.result)}</div><div class="muted">支出 − 収入（給料 − 差し引き）</div><div style="margin-top:10px">${statusBadge(m.status)} ${m.needsRecalc?'<span class="badge warn">再計算が必要</span>':''}</div><div class="actions" style="margin-top:14px">${m.status==='settled'?`<button onclick="markUnsettled()">未精算に戻す</button>`:`<button onclick="setStatus('settled')" class="primary">精算済みにする</button>`}</div></div>
+ <div class="card"><h2>精算金額</h2><div class="row" style="align-items:center;gap:10px"><div class="amount" onclick="copySettlement(${Number(c.result)||0})" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copySettlement(${Number(c.result)||0})}" title="タップしてコピー" style="cursor:pointer;flex:1">${money(c.result)}</div><button onclick="copySettlement(${Number(c.result)||0})" aria-label="精算金額をコピー" style="white-space:nowrap">コピー</button></div><div class="muted">支出 − 収入（給料 − 差し引き）</div><div style="margin-top:10px">${statusBadge(m.status)} ${m.needsRecalc?'<span class="badge warn">再計算が必要</span>':''}</div><div class="actions" style="margin-top:14px">${m.status==='settled'?`<button onclick="markUnsettled()">未精算に戻す</button>`:`<button onclick="setStatus('settled')" class="primary">精算済みにする</button>`}</div></div>
  <div class="card"><h2>① 給料</h2><label>額面</label><input type="number" id="salary" value="${m.salary??''}" placeholder="350000" oninput="setSalaryLive(this.value)" onchange="setSalary(this.value)">
  <h3 style="margin-top:14px">差し引く金額</h3><div id="deductions">${m.deductions.map((x,i)=>`<div class="item grid"><div><label>内容</label><input id="dn${i}" value="${esc(x.name)}" oninput="saveDeductionsLive()"></div><div><label>金額</label><input type="number" id="da${i}" value="${x.amount}" oninput="saveDeductionsLive()"></div><button class="danger" onclick="removeDed(${i})">削除</button></div>`).join('')}</div>
  <button onclick="addDed()">＋差し引きを追加</button><div class="muted" style="margin-top:10px">精算対象収入：<span class="income-live">${(c.salary-c.ded).toLocaleString()}円</span></div></div>
@@ -186,9 +195,13 @@ function monthExpenses(k){
  return {fixed,cards,indiv,total:fixed+cards+indiv};
 }
 function renderAggregate(a){
- const now=ym(),year=window.aggYear||now.slice(0,4),mode=window.aggMode||'year';
- const start=mode==='year'?year+'-01':(window.aggStart||year+'-01');
- const end=mode==='year'?year+'-12':(window.aggEnd||now);
+ const now=ym(),year=window.aggYear||now.slice(0,4);
+ if(!window.aggMode)window.aggMode='range';
+ if(!window.aggStart){let s=now;for(let i=0;i<11;i++)s=prevYm(s);window.aggStart=s;}
+ if(!window.aggEnd)window.aggEnd=now;
+ const mode=window.aggMode;
+ const start=mode==='year'?year+'-01':window.aggStart;
+ const end=mode==='year'?year+'-12':window.aggEnd;
  const valid=/^\d{4}-(0[1-9]|1[0-2])$/.test(start)&&/^\d{4}-(0[1-9]|1[0-2])$/.test(end)&&start<=end;
  const months=[]; if(valid){let k=start,g=0;while(k<=end&&g++<240){months.push(k);k=nextYm(k)}}
  const fixedMap=new Map(),cardMap=new Map();
@@ -201,20 +214,36 @@ function renderAggregate(a){
   return {k,inc,ex};
  });
  const fmt=n=>money(n);
- const max=Math.max(1,...rows.map(r=>Math.max(0,r.ex.total,r.ex.cards,r.inc.total)));
- const chart=rows.map(r=>`<div class="item"><div class="row"><b>${ymLabel(r.k)}</b><span class="muted small">収入 ${fmt(r.inc.total)} / 支出 ${fmt(r.ex.total)}</span></div><div class="muted small">支出合計</div><div style="height:10px;background:#eee;border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,Math.min(100,r.ex.total/max*100))}%;background:#5b8def"></div></div><div class="muted small">カード合計 ${fmt(r.ex.cards)}</div><div style="height:8px;background:#eee;border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,Math.min(100,r.ex.cards/max*100))}%;background:#16a085"></div></div><div class="muted small">収支 ${fmt(r.inc.total-r.ex.total)}</div></div>`).join('');
- a.innerHTML=`<h1>家計集計</h1><div class="card"><div class="tabs"><button class="${mode==='year'?'active':''}" onclick="window.aggMode='year';render()">年単位</button><button class="${mode==='range'?'active':''}" onclick="window.aggMode='range';render()">期間指定</button></div>
- ${mode==='year'?`<label>集計年</label><select onchange="window.aggYear=this.value;render()">${Array.from({length:12},(_,i)=>Number(now.slice(0,4))-5+i).map(y=>`<option value="${y}" ${String(y)===String(year)?'selected':''}>${y}年</option>`).join('')}</select>`:`<div class="grid"><div><label>開始年月</label><input id="aggStart" type="month" value="${esc(start)}"></div><div><label>終了年月</label><input id="aggEnd" type="month" value="${esc(end)}"></div></div><button class="primary" style="margin-top:10px" onclick="window.aggStart=document.getElementById('aggStart').value;window.aggEnd=document.getElementById('aggEnd').value;render()">この期間で集計</button>`}</div>
+ let chart='';
+ if(rows.length){
+  const W=Math.max(340,rows.length*48+58),H=260,L=58,R=10,T=16,B=42,plotH=H-T-B,plotW=W-L-R;
+  const maxVal=Math.max(1,...rows.map(r=>Math.max(0,r.inc.total)+Math.max(0,r.ex.total)));
+  const tick=Math.max(1,Math.ceil(maxVal/4/10000)*10000),axisMax=tick*4;
+  const y=v=>T+plotH-(Math.max(0,v)/axisMax)*plotH;
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="月別の収入と支出の積み上げ棒グラフ">`;
+  for(let i=0;i<=4;i++){const val=axisMax*i/4,yy=y(val);svg+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#ddd" stroke-width="1"/><text x="${L-7}" y="${yy+4}" text-anchor="end" font-size="10" fill="#555">${Math.round(val/10000)}万</text>`}
+  const groupW=plotW/rows.length,bw=Math.min(24,groupW*.55);
+  rows.forEach((r,i)=>{
+   const cx=L+groupW*(i+.5),incH=Math.max(0,r.inc.total)/axisMax*plotH,exH=Math.max(0,r.ex.total)/axisMax*plotH;
+   const baseY=T+plotH,exY=baseY-exH,incY=exY-incH;
+   svg+=`<rect x="${cx-bw/2}" y="${exY}" width="${bw}" height="${exH}" rx="1" fill="#5b8def"><title>${ymLabel(r.k)} 支出 ${fmt(r.ex.total)}</title></rect><rect x="${cx-bw/2}" y="${incY}" width="${bw}" height="${incH}" rx="1" fill="#16a085"><title>${ymLabel(r.k)} 収入 ${fmt(r.inc.total)}</title></rect><text x="${cx}" y="${H-22}" text-anchor="middle" font-size="10" fill="#444">${Number(r.k.slice(5))}月</text>`;
+  });
+  svg+='</svg>';
+  chart=`<div style="overflow-x:auto;max-width:100%">${svg}</div><div class="muted small">縦軸：金額（万円）／横軸：月　 <span style="color:#16a085">■ 収入</span>　<span style="color:#5b8def">■ 支出</span><br>各月の棒は収入と支出を積み上げて表示しています。</div>`;
+ }
+ a.innerHTML=`<h1>家計集計</h1><div class="card"><div class="tabs"><button class="${mode==='range'?'active':''}" onclick="window.aggMode='range';render()">期間指定</button><button class="${mode==='year'?'active':''}" onclick="window.aggMode='year';render()">年単位</button></div>
+ ${mode==='year'?`<label>集計年</label><select onchange="window.aggYear=this.value;render()">${Array.from({length:12},(_,i)=>Number(now.slice(0,4))-5+i).map(y=>`<option value="${y}" ${String(y)===String(year)?'selected':''}>${y}年</option>`).join('')}</select>`:`<div class="grid"><div><label>開始年月</label><input id="aggStart" type="month" value="${esc(start)}"></div><div><label>終了年月</label><input id="aggEnd" type="month" value="${esc(end)}"></div></div><button class="primary" style="margin-top:10px" onclick="window.aggStart=document.getElementById('aggStart').value;window.aggEnd=document.getElementById('aggEnd').value;render()">この期間で集計</button><div class="muted small" style="margin-top:8px">初期表示は今月を含む過去12か月です。</div>`}</div>
  ${!valid?'<div class="card warn">期間を正しく指定してください。</div>':`
  <div class="card"><div class="muted">集計期間：${ymLabel(start)} ～ ${ymLabel(end)}</div><h2>収入</h2><div class="row"><span>給与総額</span><b>${fmt(salary)}</b></div><div class="row"><span>給与の控除・除外額</span><b>${fmt(ded)}</b></div><div class="row"><span>精算対象の給与</span><b>${fmt(salary-ded)}</b></div><div class="row"><span>ボーナス（集計のみ）</span><b>${fmt(bonus)}</b></div><div class="row"><strong>収入合計</strong><strong>${fmt(income)}</strong></div></div>
  <div class="card"><h2>支出</h2><div class="row"><span>固定費</span><b>${fmt(fixed)}</b></div><div class="row"><span>クレジットカード</span><b>${fmt(cards)}</b></div><div class="row"><span>個別精算</span><b>${fmt(indiv)}</b></div><div class="row"><strong>支出合計</strong><strong>${fmt(expenses)}</strong></div></div>
  <div class="card"><div class="muted">収入合計 − 支出合計</div><h2>収支差額</h2><div class="amount ${income-expenses<0?'neg':'pos'}">${fmt(income-expenses)}</div></div>
  <div class="card"><h2>固定費の明細別集計</h2>${[...fixedMap.values()].sort((x,y)=>Math.abs(y.amount)-Math.abs(x.amount)).map(x=>`<div class="row"><span>${esc(x.name)}</span><b>${fmt(x.amount)}</b></div>`).join('')||'<div class="empty">対象データがありません</div>'}</div>
  <div class="card"><h2>カード別集計</h2>${[...cardMap.values()].sort((x,y)=>Math.abs(y.amount)-Math.abs(x.amount)).map(x=>`<div class="row"><span>${esc(x.name)}</span><b>${fmt(x.amount)}</b></div>`).join('')||'<div class="empty">対象データがありません</div>'}</div>
- <div class="card"><h2>月別推移</h2><div class="muted small">青：支出合計　緑：カード合計</div>${chart||'<div class="empty">対象データがありません</div>'}</div>`}
+ <div class="card"><h2>月別推移</h2>${chart||'<div class="empty">対象データがありません</div>'}</div>`}
  <div class="card"><h2>ボーナス登録</h2><p class="muted">ボーナスは収入集計に含まれますが、月々の精算金額には影響しません。</p><button class="primary" onclick="openBonus(-1)">＋ボーナスを登録</button>
  ${(db.bonuses||[]).slice().sort((x,y)=>y.month.localeCompare(x.month)).map(b=>`<div class="item row"><div><b>${esc(b.name||'ボーナス')}　${esc(b.month)}</b><br>${fmt(b.amount)}</div><div class="actions"><button onclick="openBonusById('${b.id}')">編集</button><button class="danger" onclick="deleteBonus('${b.id}')">削除</button></div></div>`).join('')||'<div class="empty">ボーナスはまだ登録されていません</div>'}</div>`;
 }
+
 function openBonus(i){
  const x=i<0?{id:'',month:ym(),name:'ボーナス',amount:0}:db.bonuses[i];
  document.getElementById('modal').style.display='flex';
