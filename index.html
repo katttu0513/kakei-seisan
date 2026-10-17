@@ -106,12 +106,12 @@ function renderHome(a){
 }
 function copySettlement(value){
  const text=String(Number(value)||0);
- if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>alert('精算金額 '+text+' をコピーしました。')).catch(()=>copySettlementFallback(text));}
+ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).catch(()=>copySettlementFallback(text));}
  else copySettlementFallback(text);
 }
 function copySettlementFallback(text){
  const input=document.createElement('textarea');input.value=text;input.setAttribute('readonly','');input.style.position='fixed';input.style.opacity='0';document.body.appendChild(input);input.select();
- let ok=false;try{ok=document.execCommand('copy')}catch(e){}input.remove();alert(ok?'精算金額 '+text+' をコピーしました。':'コピーできませんでした。金額を長押ししてコピーしてください。');
+ let ok=false;try{ok=document.execCommand('copy')}catch(e){}input.remove();if(!ok)alert('コピーできませんでした。金額を長押ししてコピーしてください。');
 }
 function renderDetail(a,k){
  ensureMonth(k);let m=db.months[k],c=calc(k),fixed=m.fixedSnapshot||[],cards=m.cardSnapshot||[];
@@ -216,20 +216,34 @@ function renderAggregate(a){
  const fmt=n=>money(n);
  let chart='';
  if(rows.length){
-  const W=Math.max(340,rows.length*48+58),H=260,L=58,R=10,T=16,B=42,plotH=H-T-B,plotW=W-L-R;
-  const maxVal=Math.max(1,...rows.map(r=>Math.max(0,r.inc.total)+Math.max(0,r.ex.total)));
+  const W=Math.max(340,rows.length*58+58),H=280,L=58,R=10,T=16,B=42,plotH=H-T-B,plotW=W-L-R;
+  const maxVal=Math.max(1,...rows.map(r=>Math.max(r.inc.total,r.ex.total,0)));
   const tick=Math.max(1,Math.ceil(maxVal/4/10000)*10000),axisMax=tick*4;
   const y=v=>T+plotH-(Math.max(0,v)/axisMax)*plotH;
   let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="月別の収入と支出の積み上げ棒グラフ">`;
   for(let i=0;i<=4;i++){const val=axisMax*i/4,yy=y(val);svg+=`<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="#ddd" stroke-width="1"/><text x="${L-7}" y="${yy+4}" text-anchor="end" font-size="10" fill="#555">${Math.round(val/10000)}万</text>`}
-  const groupW=plotW/rows.length,bw=Math.min(24,groupW*.55);
+  const groupW=plotW/rows.length,bw=Math.min(16,groupW*.27);
   rows.forEach((r,i)=>{
-   const cx=L+groupW*(i+.5),incH=Math.max(0,r.inc.total)/axisMax*plotH,exH=Math.max(0,r.ex.total)/axisMax*plotH;
-   const baseY=T+plotH,exY=baseY-exH,incY=exY-incH;
-   svg+=`<rect x="${cx-bw/2}" y="${exY}" width="${bw}" height="${exH}" rx="1" fill="#5b8def"><title>${ymLabel(r.k)} 支出 ${fmt(r.ex.total)}</title></rect><rect x="${cx-bw/2}" y="${incY}" width="${bw}" height="${incH}" rx="1" fill="#16a085"><title>${ymLabel(r.k)} 収入 ${fmt(r.inc.total)}</title></rect><text x="${cx}" y="${H-22}" text-anchor="middle" font-size="10" fill="#444">${Number(r.k.slice(5))}月</text>`;
+   const cx=L+groupW*(i+.5),baseY=T+plotH;
+   const salary=Math.max(0,r.inc.base),bonus=Math.max(0,r.inc.bonus);
+   const fixed=Math.max(0,r.ex.fixed),variable=r.ex.cards+r.ex.indiv;
+   const salaryH=salary/axisMax*plotH,bonusH=bonus/axisMax*plotH,fixedH=fixed/axisMax*plotH,varH=Math.abs(variable)/axisMax*plotH;
+   const incX=cx-bw-2,exX=cx+2;let cursor=baseY;
+   if(salary>0){const yy=cursor-salaryH;svg+=`<rect x="${incX}" y="${yy}" width="${bw}" height="${salaryH}" fill="#16a085"><title>${ymLabel(r.k)} 精算対象の給与 ${fmt(r.inc.base)}</title></rect>`;cursor=yy}
+   if(bonus>0){const yy=cursor-bonusH;svg+=`<rect x="${incX}" y="${yy}" width="${bw}" height="${bonusH}" fill="#8bd3c7"><title>${ymLabel(r.k)} ボーナス ${fmt(r.inc.bonus)}</title></rect>`}
+   cursor=baseY;
+   if(variable>=0){
+    if(fixed>0){const yy=cursor-fixedH;svg+=`<rect x="${exX}" y="${yy}" width="${bw}" height="${fixedH}" fill="#5b8def"><title>${ymLabel(r.k)} 固定費 ${fmt(r.ex.fixed)}</title></rect>`;cursor=yy}
+    if(variable>0){const yy=cursor-varH;svg+=`<rect x="${exX}" y="${yy}" width="${bw}" height="${varH}" fill="#f2b84b"><title>${ymLabel(r.k)} カード＋個別精算 ${fmt(variable)}</title></rect>`}
+   } else {
+    const net=Math.max(0,fixed+variable),netH=net/axisMax*plotH,netY=baseY-netH,fixedY=baseY-fixedH;
+    if(net>0){svg+=`<rect x="${exX}" y="${netY}" width="${bw}" height="${netH}" fill="#5b8def"><title>${ymLabel(r.k)} 固定費とマイナス精算を反映した支出 ${fmt(net)}</title></rect>`}
+    if(fixed>net){svg+=`<rect x="${exX}" y="${fixedY}" width="${bw}" height="${Math.max(0,netH===0?fixedH:fixedH-netH)}" fill="#d977a8"><title>${ymLabel(r.k)} カード＋個別精算 ${fmt(variable)}（支出を減額）</title></rect>`}
+   }
+   svg+=`<text x="${cx}" y="${H-22}" text-anchor="middle" font-size="10" fill="#444">${Number(r.k.slice(5))}月</text>`;
   });
   svg+='</svg>';
-  chart=`<div style="overflow-x:auto;max-width:100%">${svg}</div><div class="muted small">縦軸：金額（万円）／横軸：月　 <span style="color:#16a085">■ 収入</span>　<span style="color:#5b8def">■ 支出</span><br>各月の棒は収入と支出を積み上げて表示しています。</div>`;
+  chart=`<div style="width:100%;max-width:100%;overflow:hidden">${svg.replace(`width="${W}" height="${H}"`,`width="100%" height="auto" style="display:block;max-width:100%"`)}</div><div class="muted small">縦軸：金額（万円）／横軸：月<br><span style="color:#16a085">■ 精算対象の給与</span>　<span style="color:#8bd3c7">■ ボーナス</span><br><span style="color:#5b8def">■ 固定費</span>　<span style="color:#f2b84b">■ カード＋個別精算</span><br>各月で収入と支出を左右に分けて表示。カード＋個別精算はマイナスも合算し、支出合計に反映します。</div>`;
  }
  a.innerHTML=`<h1>家計集計</h1><div class="card"><div class="tabs"><button class="${mode==='range'?'active':''}" onclick="window.aggMode='range';render()">期間指定</button><button class="${mode==='year'?'active':''}" onclick="window.aggMode='year';render()">年単位</button></div>
  ${mode==='year'?`<label>集計年</label><select onchange="window.aggYear=this.value;render()">${Array.from({length:12},(_,i)=>Number(now.slice(0,4))-5+i).map(y=>`<option value="${y}" ${String(y)===String(year)?'selected':''}>${y}年</option>`).join('')}</select>`:`<div class="grid"><div><label>開始年月</label><input id="aggStart" type="month" value="${esc(start)}"></div><div><label>終了年月</label><input id="aggEnd" type="month" value="${esc(end)}"></div></div><button class="primary" style="margin-top:10px" onclick="window.aggStart=document.getElementById('aggStart').value;window.aggEnd=document.getElementById('aggEnd').value;render()">この期間で集計</button><div class="muted small" style="margin-top:8px">初期表示は今月を含む過去12か月です。</div>`}</div>
